@@ -10,32 +10,22 @@ import asyncio
 MODEL_ID = "meta-llama-3.1-8b-instruct"
 
 # System prompt that guides the LLM's behavior and capabilities
-SYSTEM_PROMPT = """You are a helpful and friendly Quantum Chatbot assistant. Your main job is to help users interact with a quantum circuit simulator using the tools available to you.
+SYSTEM_PROMPT = """You are a Quantum Circuit assistant that ONLY uses tools to perform actions. Your responses should be minimal and focused on tool execution.
 
-**Primary Responsibilities:**
-Use the appropriate tool when the user requests an action related to:
-* Creating a quantum circuit (`create_circuit`)
-* Applying gates (`apply_gate`)
-* Viewing the circuit structure (`show_circuit`)
-* Viewing the quantum state (`show_state`)
-* Resetting the circuit (`reset_circuit`)
-
-**Guidelines for Using Tools:**
-1. **Use Tools When Needed:** If a user's request clearly maps to a tool's function, call that tool. If it's conversational or not directly mappable, reply naturally.
-2. **Automatic Displays:** After using tools that affect or display the circuit (like `apply_gate`, `show_state`, etc.), the system will automatically show the result. You don’t need to repeat this info.
-3. **Follow-Up Messages:**
-   * Confirm the action briefly, e.g., “H gate applied to qubit 0.”
-   * You may optionally add a short follow-up question, like “What’s next?”
-   * Avoid long explanations of the output already shown, unless the user asks for it.
-4. **Handling Multi-Step Requests:** If a user asks for several actions at once (e.g., “apply X to 1, then show the state”), process them in sequence using the relevant tools.
+**Core Rules:**
+1. ONLY use tools to perform actions - do not explain what you're doing
+2. If you can't understand the request or need more information, ask for clarification
+3. If parameters are incorrect or missing, ask for the correct parameters
+4. Do not provide explanations of results - just execute the requested actions
 
 **Available Tools:**
 {tools}
 
-**General Behavior:**
-- Be friendly, conversational, and helpful.
-- Prioritize clarity and usefulness over brevity when needed.
-- Don’t rigidly follow a script—use your judgment to keep the interaction smooth and supportive.
+**Response Guidelines:**
+- For unclear requests: "Please provide a more specific command"
+- For missing parameters: "Please specify [missing parameter]"
+- For invalid parameters: "Invalid parameter. Please provide a valid [parameter]"
+- For successful tool execution: No response needed
 """
 
 # Initialize the OpenAI API-compatible client
@@ -84,10 +74,11 @@ class MCPClient:
         if not self.session:
             raise RuntimeError("Not connected to MCP server")
 
-        tools = await self.session.list_tools()
-        _, tools_list = tools
-        _, tools_list = tools_list
-        return tools_list
+        tools = (await self.session.list_tools()).tools
+        # _, tools_list = tools
+        # _, tools_list = tools_list
+        # return tools_list
+        return tools
 
     def call_tool(self, tool_name: str) -> Any:
         """
@@ -113,16 +104,7 @@ class MCPClient:
 async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
     """
     Main interaction loop that processes user queries using the LLM and available tools.
-
-    This function:
-    1. Sends the user query to the LLM with context about available tools
-    2. Processes the LLM's response, including any tool calls
-    3. Returns the final response to the user
-
-    Args:
-        query: User's input question or command
-        tools: Dictionary of available database tools and their schemas
-        messages: List of messages to pass to the LLM, defaults to None
+    Only executes tools and provides minimal responses for clarification needs.
     """
     messages = (
         [
@@ -135,16 +117,14 @@ async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
                             for t in tools.values()
                         ]
                     )
-                ),  # Creates System prompt based on available MCP server tools
+                ),
             },
         ]
         if messages is None
-        else messages  # reuse existing messages if provided
+        else messages
     )
-    # add user query to the messages list
     messages.append({"role": "user", "content": query})
 
-    # Query LLM with the system prompt, user query, and available tools
     first_response = await client.chat.completions.create(
         model=MODEL_ID,
         messages=messages,
@@ -152,9 +132,7 @@ async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
         max_tokens=4096,
         temperature=0,
     )
-    # detect how the LLM call was completed:
-    # tool_calls: if the LLM used a tool
-    # stop: If the LLM generated a general response, e.g. "Hello, how can I help you today?"
+
     stop_reason = (
         "tool_calls"
         if first_response.choices[0].message.tool_calls is not None
@@ -162,54 +140,35 @@ async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
     )
 
     if stop_reason == "tool_calls":
-        # Extract tool use details from response
         for tool_call in first_response.choices[0].message.tool_calls:
             arguments = (
                 json.loads(tool_call.function.arguments)
                 if isinstance(tool_call.function.arguments, str)
                 else tool_call.function.arguments
             )
-            # --- Added Print Statement ---
-            # Print the tool name and arguments chosen by the LLM
-            print(f"\n--- LLM decided to call tool: {tool_call.function.name} with args: {arguments} ---")
-            # --- End Added Print Statement ---
-
-            # Call the tool with the arguments using our callable initialized in the tools dict
+            # Execute the tool and get the result
             tool_result = await tools[tool_call.function.name]["callable"](**arguments)
-
-            # Print the raw result received from the tool call directly
-            print(f"\n{tool_result}")
-
+            
             # Add the tool result to the messages list
             messages.append(
                 {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": tool_call.function.name,
-                    "content": json.dumps(tool_result), # Send raw result back to LLM
+                    "content": json.dumps(tool_result),
                 }
             )
-
-        # Query LLM with the user query and the tool results
-        new_response = await client.chat.completions.create(
-            model=MODEL_ID,
-            messages=messages,
-        )
-
+            
+            # Return the tool result directly instead of getting another response
+            return tool_result, messages
+            
     elif stop_reason == "stop":
-        # If the LLM stopped on its own, use the first response
-        new_response = first_response
-
+        # If the LLM stopped without calling a tool, return its response
+        response = first_response.choices[0].message.content
+        messages.append({"role": "assistant", "content": response})
+        return response, messages
     else:
         raise ValueError(f"Unknown stop reason: {stop_reason}")
-
-    # Add the LLM response to the messages list
-    messages.append(
-        {"role": "assistant", "content": new_response.choices[0].message.content}
-    )
-
-    # Return the LLM response and messages
-    return new_response.choices[0].message.content, messages
 
 
 async def main():
