@@ -1,0 +1,11 @@
+mcp==1.6.0
+openai
+httpx
+sty
+colorcet
+numpy
+matplotlib
+qiskit==1.3.3
+qiskit-aer
+panel
+git+https://github.com/learnqc/code.git
