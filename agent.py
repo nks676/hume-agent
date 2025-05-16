@@ -5,8 +5,11 @@ import os
 from openai import AsyncOpenAI
 from mcp import ClientSession, StdioServerParameters, stdio_client
 import asyncio
+from config import get_config
 
-MODEL_ID = "meta-llama-3.1-8b-instruct"
+# Get configuration
+config = get_config()
+MODEL_ID = config["model_id"]
 
 # System prompt that guides the LLM's behavior and capabilities
 SYSTEM_PROMPT = """You are a Quantum Circuit assistant that ONLY uses tools to perform actions. Your responses should be minimal and focused on tool execution.
@@ -28,10 +31,9 @@ SYSTEM_PROMPT = """You are a Quantum Circuit assistant that ONLY uses tools to p
 """
 
 # Initialize the OpenAI API-compatible client
-# Note: The base URL is set to a local server for testing purposes.
 client = AsyncOpenAI(
-    base_url="http://127.0.0.1:1234/v1/",
-    api_key="1234567890",
+    base_url=config["base_url"],
+    api_key=config["api_key"],
 )
 
 class MCPClient:
