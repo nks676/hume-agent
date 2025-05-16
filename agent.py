@@ -5,10 +5,9 @@ import os
 from openai import AsyncOpenAI
 from mcp import ClientSession, StdioServerParameters, stdio_client
 import asyncio
-from config import get_config
+from config import config
 
-# Get configuration
-config = get_config()
+# Get model ID from config
 MODEL_ID = config["model_id"]
 
 # System prompt that guides the LLM's behavior and capabilities

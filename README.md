@@ -22,19 +22,15 @@ This project implements a chatbot agent that interacts with a Quantum Computing 
     ```
 
 2. **Configure LLM Provider:**
-   You can configure the LLM provider using environment variables
-   ```bash
-   # For Ollama
-   export LLM_PROVIDER=ollama
-   export LLM_MODEL_ID=llama3.1 # Change to whatever model you use
-   
-   # For local OpenAI-compatible servers (such as LM Studio)
-   export LLM_PROVIDER=local
-   export LLM_MODEL_ID=meta-llama-3.1-8b-instruct # Change to whatever model you use
-   
-   # Optionally, override the default port
-   # For example, Ollama default port is 11434, LMStudio default port is 1234 
-   export LLM_BASE_URL=http://localhost:YOUR_PORT/v1
+   Edit `config.py` to set your provider and model:
+   ```python
+   # Set your provider here: "ollama" or "local"
+   PROVIDER = "ollama"  # or "local" for LM Studio and similar servers
+
+   # You can override any settings there if needed
+   # config["base_url"] = "http://localhost:8000/v1"
+   # config["model_id"] = "your-model-name"
+   # config["api_key"] = "your-api-key"
    ```
 
 ## Running the Agent
